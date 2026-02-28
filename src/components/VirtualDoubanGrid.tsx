@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { VirtuosoGrid, VirtuosoGridHandle } from 'react-virtuoso';
 
 import { DoubanItem } from '@/lib/types';
+import { processImageUrl } from '@/lib/utils';
 import { useImagePreload } from '@/hooks/useImagePreload';
 import VideoCard from '@/components/VideoCard';
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
@@ -28,6 +29,18 @@ interface VirtualDoubanGridProps {
 
 const INITIAL_PRIORITY_COUNT = 30;
 const skeletonData = Array.from({ length: 25 }, (_, i) => i);
+
+function getAdaptiveOverscan(): number {
+  if (typeof navigator === 'undefined') return 900;
+  const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory;
+  if (typeof mem === 'number') {
+    if (mem <= 4) return 620;
+    if (mem <= 8) return 820;
+  }
+  return 980;
+}
+
+const OVERSCAN = getAdaptiveOverscan();
 
 // List 容器：flex wrap，对应原来的 grid class
 const ListContainer = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
@@ -79,12 +92,40 @@ export const VirtualDoubanGrid = React.forwardRef<VirtualDoubanGridRef, VirtualD
 
     const imagesToPreload = useMemo(() => {
       return doubanData
-        .slice(0, Math.min(30, doubanData.length))
-        .map((item) => item.poster)
+        .map((item) => item.poster ? processImageUrl(item.poster) : '')
         .filter(Boolean) as string[];
     }, [doubanData]);
 
     useImagePreload(imagesToPreload, doubanData.length > 0);
+
+    const videoCardType = useMemo(() =>
+      type === 'movie' ? 'movie'
+      : type === 'show' ? 'variety'
+      : type === 'tv' ? 'tv'
+      : type === 'anime' ? 'anime'
+      : '',
+    [type]);
+
+    const itemContent = useCallback((index: number, item: DoubanItem) => {
+      return (
+        <VideoCard
+          from='douban'
+          source='douban'
+          id={item.id}
+          source_name='豆瓣'
+          title={item.title}
+          poster={item.poster}
+          douban_id={Number(item.id)}
+          rate={item.rate}
+          year={item.year}
+          type={videoCardType}
+          isBangumi={isBangumi}
+          priority={index < INITIAL_PRIORITY_COUNT}
+          aiEnabled={aiEnabled}
+          aiCheckComplete={aiCheckComplete}
+        />
+      );
+    }, [videoCardType, isBangumi, aiEnabled, aiCheckComplete]);
 
     useImperativeHandle(ref, () => ({
       scrollToTop: () => {
@@ -136,7 +177,8 @@ export const VirtualDoubanGrid = React.forwardRef<VirtualDoubanGridRef, VirtualD
         ref={virtuosoRef}
         customScrollParent={scrollParent ?? undefined}
         data={doubanData}
-        overscan={1200}
+        overscan={{ main: OVERSCAN, reverse: Math.round(OVERSCAN * 0.85) }}
+        increaseViewportBy={{ top: Math.round(OVERSCAN * 0.45), bottom: Math.round(OVERSCAN * 0.75) }}
         endReached={() => {
           if (hasMore && !isLoadingMore) onLoadMore();
         }}
@@ -196,30 +238,7 @@ export const VirtualDoubanGrid = React.forwardRef<VirtualDoubanGridRef, VirtualD
               </div>
             ) : null,
         }}
-        itemContent={(index, item) => (
-          <VideoCard
-            from='douban'
-            source='douban'
-            id={item.id}
-            source_name='豆瓣'
-            title={item.title}
-            poster={item.poster}
-            douban_id={Number(item.id)}
-            rate={item.rate}
-            year={item.year}
-            type={
-              type === 'movie' ? 'movie'
-              : type === 'show' ? 'variety'
-              : type === 'tv' ? 'tv'
-              : type === 'anime' ? 'anime'
-              : ''
-            }
-            isBangumi={isBangumi}
-            priority={index < INITIAL_PRIORITY_COUNT}
-            aiEnabled={aiEnabled}
-            aiCheckComplete={aiCheckComplete}
-          />
-        )}
+        itemContent={itemContent}
       />
     );
   },
