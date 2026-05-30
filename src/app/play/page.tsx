@@ -509,14 +509,20 @@ function PlayPageClient() {
   useEffect(() => {
     if (!videoTitle) return;
     if (tmdbFetchedRef.current) return;
-    tmdbFetchedRef.current = true;
     let cancelled = false;
     const params = new URLSearchParams({ title: videoTitle });
     if (videoYear) params.set('year', videoYear);
     if (movieDetails?.original_title) params.set('original_title', movieDetails.original_title);
     fetch(`/api/tmdb/backdrop?${params.toString()}`)
       .then(r => r.ok ? r.json() : null)
-      .then(json => { if (!cancelled && json?.data) setTmdbData(json.data); })
+      .then(json => {
+        if (!cancelled) {
+          if (json?.data) {
+            setTmdbData(json.data);
+            tmdbFetchedRef.current = true; // 只有成功才设 true
+          }
+        }
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [videoTitle, videoYear, movieDetails?.original_title]);
